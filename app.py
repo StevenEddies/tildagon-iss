@@ -11,11 +11,13 @@ LOADING = 1
 FUTURE = 2
 NOW = 3
 ERROR = 4
+NO_PASS = 5
 
 class IssCountdownApp(app.App):
     def __init__(self):
         self._button_states = Buttons(self)
         self._state = PRE_LOADING
+        self._recheck = 0
     
     def update(self, delta):
         if self._button_states.get(BUTTON_TYPES["CANCEL"]):
@@ -23,8 +25,12 @@ class IssCountdownApp(app.App):
             self.minimise()
             return
         
-        if (self._button_states.get(BUTTON_TYPES["CONFIRM"]) and self._state == ERROR):
+        if (self._button_states.get(BUTTON_TYPES["CONFIRM"]) and (self._state == ERROR or self._state == NO_PASS)):
             self._button_states.clear()
+            self._state = PRE_LOADING
+            return
+        
+        if (self._recheck <= time.time() and (self._state == ERROR or self._state == NO_PASS)):
             self._state = PRE_LOADING
             return
         
@@ -36,7 +42,7 @@ class IssCountdownApp(app.App):
             self.query()
             return
             
-        if (self._state == ERROR):
+        if (self._state == ERROR or self._state == NO_PASS):
             return
         
         now_timetamp_utc = time.time() + 946684800 # Micropython uses 2000 for epoch
@@ -90,6 +96,12 @@ class IssCountdownApp(app.App):
             ctx.font_size = 25
             ctx.rgb(0.2, 0.2, 0).move_to(0, 30).text(self._next_pass_direction)
             ctx.rgb(0.2, 0.2, 0).move_to(0, 60).text(self._next_pass_quality)
+        elif (self._state == NO_PASS):
+            ctx.font_size = 25
+            ctx.rgb(0.2, 0.2, 0).rectangle(-120, -120, 240, 240).fill()
+            ctx.rgb(1, 0.35, 0.25).move_to(0, -40).text("Next ISS pass in")
+            ctx.font_size = 35
+            ctx.rgb(1, 0.35, 0.25).move_to(0, -2).text(">10d")
     
     def query(self):
         try:
@@ -97,14 +109,19 @@ class IssCountdownApp(app.App):
             self._connect_wifi()
             ntptime.settime()
             result = requests.get("https://issinfo.net/next-pass?lat=52.03975&lon=-2.38255&format=json").json()
-            self._next_pass_start_timestamp_utc = result['pass']['startUTC']
-            self._next_pass_end_timestamp_utc = result['pass']['endUTC']
-            self._next_pass_direction = result['pass']['startDirection'] + " → " + result['pass']['endDirection']
-            next_pass_quality = result['pass']['quality']
-            self._next_pass_quality = next_pass_quality[0].upper() + next_pass_quality[1:] + " quality"
-            self._state = FUTURE
+            if result['pass'] is None:
+                self._state = NO_PASS
+                self._recheck = time.time() + (3600 * 12)
+            else:
+                self._next_pass_start_timestamp_utc = result['pass']['startUTC']
+                self._next_pass_end_timestamp_utc = result['pass']['endUTC']
+                self._next_pass_direction = result['pass']['startDirection'] + " → " + result['pass']['endDirection']
+                next_pass_quality = result['pass']['quality']
+                self._next_pass_quality = next_pass_quality[0].upper() + next_pass_quality[1:] + " quality"
+                self._state = FUTURE
         except Exception:
             self._state = ERROR
+            self._recheck = time.time() + 60
     
     def _connect_wifi(self):
         if wifi.status():
