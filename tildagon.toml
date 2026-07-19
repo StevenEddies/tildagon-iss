@@ -1,0 +1,14 @@
+[app]
+name = "ISS Countdown"
+category = "Apps"
+wifi_preference = true
+
+[entry]
+class = "IssCountdownApp"
+
+[metadata]
+author = "steven-e"
+license = "Apache-2.0"
+url = "https://github.com/StevenEddies/tildagon-iss"
+description = "A countdown to the next ISS pass over Eastnor."
+version = "0.0.1"
