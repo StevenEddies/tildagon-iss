@@ -6,6 +6,7 @@ import wifi
 
 from events.input import Buttons, BUTTON_TYPES
 
+PRE_LOADING = 0
 LOADING = 1
 FUTURE = 2
 NOW = 3
@@ -14,19 +15,29 @@ ERROR = 4
 class IssCountdownApp(app.App):
     def __init__(self):
         self._button_states = Buttons(self)
-        self._state = LOADING
+        self._state = PRE_LOADING
     
     def update(self, delta):
         if self._button_states.get(BUTTON_TYPES["CANCEL"]):
             self._button_states.clear()
             self.minimise()
+            return
         
         if (self._button_states.get(BUTTON_TYPES["CONFIRM"]) and self._state == ERROR):
             self._button_states.clear()
-            self._state = LOADING
+            self._state = PRE_LOADING
+            return
         
+        if (self._state == PRE_LOADING):
+            self._state = LOADING
+            return
+            
         if (self._state == LOADING):
             self.query()
+            return
+            
+        if (self._state == ERROR):
+            return
         
         now_timetamp_utc = time.time() + 946684800 # Micropython uses 2000 for epoch
         if (self._next_pass_start_timestamp_utc > now_timetamp_utc):
@@ -52,7 +63,7 @@ class IssCountdownApp(app.App):
     
     def draw(self, ctx):
         ctx.text_align = ctx.CENTER
-        if (self._state == LOADING):
+        if (self._state == LOADING or self._state == PRE_LOADING):
             ctx.rgb(0.2, 0.2, 0).rectangle(-120, -120, 240, 240).fill()
             ctx.font_size = 35
             ctx.rgb(1, 0.35, 0.25).move_to(0, -2).text("Loading...")
@@ -74,7 +85,8 @@ class IssCountdownApp(app.App):
         elif (self._state == NOW):
             ctx.rgb(1, 0.35, 0.25).rectangle(-120, -120, 240, 240).fill()
             ctx.font_size = 35
-            ctx.rgb(0.2, 0.2, 0).move_to(0, -2).text("ISS passing now")
+            ctx.rgb(0.2, 0.2, 0).move_to(0, -40).text("ISS")
+            ctx.rgb(0.2, 0.2, 0).move_to(0, -2).text("passing now")
             ctx.font_size = 25
             ctx.rgb(0.2, 0.2, 0).move_to(0, 30).text(self._next_pass_direction)
             ctx.rgb(0.2, 0.2, 0).move_to(0, 60).text(self._next_pass_quality)
@@ -88,7 +100,8 @@ class IssCountdownApp(app.App):
             self._next_pass_start_timestamp_utc = result['pass']['startUTC']
             self._next_pass_end_timestamp_utc = result['pass']['endUTC']
             self._next_pass_direction = result['pass']['startDirection'] + " → " + result['pass']['endDirection']
-            self._next_pass_quality = result['pass']['quality'] + " quality"
+            next_pass_quality = result['pass']['quality']
+            self._next_pass_quality = next_pass_quality[0].upper() + next_pass_quality[1:] + " quality"
             self._state = FUTURE
         except Exception:
             self._state = ERROR
