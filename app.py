@@ -3,6 +3,8 @@ import requests
 import time
 import ntptime
 import wifi
+from system.eventbus import eventbus
+from system.hexpansion.util import get_app_by_vid_pid
 
 from events.input import Buttons, BUTTON_TYPES
 
@@ -18,6 +20,19 @@ class IssCountdownApp(app.App):
         self._button_states = Buttons(self)
         self._state = PRE_LOADING
         self._recheck = 0
+        
+        self._gps = get_app_by_vid_pid(0x7CAB, 0xBEAC)
+
+        if self._gps:
+            eventbus.on(
+                self._gps.GPSEvent,
+                self.handle_gps_event,
+                self
+            )
+            self._position = None
+        else:
+            self._position = (52.03975, 2.38255) # Eastnor
+        
     
     def update(self, delta):
         if self._button_states.get(BUTTON_TYPES["CANCEL"]):
@@ -104,11 +119,13 @@ class IssCountdownApp(app.App):
             ctx.rgb(1, 0.35, 0.25).move_to(0, -2).text(">10d")
     
     def query(self):
+        if self._position is None:
+            return
         try:
             self._countdown = "Loading..."
             self._connect_wifi()
             ntptime.settime()
-            result = requests.get("https://issinfo.net/next-pass?lat=52.03975&lon=-2.38255&format=json").json()
+            result = requests.get("https://issinfo.net/next-pass?lat=" + str(self._position[0]) + "&lon=" + str(self._position[1]) + "&format=json").json()
             if result['pass'] is None:
                 self._state = NO_PASS
                 self._recheck = time.time() + (3600 * 12)
@@ -119,9 +136,10 @@ class IssCountdownApp(app.App):
                 next_pass_quality = result['pass']['quality']
                 self._next_pass_quality = next_pass_quality[0].upper() + next_pass_quality[1:] + " quality"
                 self._state = FUTURE
-        except Exception:
+        except Exception as err_obj:
             self._state = ERROR
             self._recheck = time.time() + 60
+            print(err_obj)
     
     def _connect_wifi(self):
         if wifi.status():
@@ -129,5 +147,9 @@ class IssCountdownApp(app.App):
         wifi.disconnect()
         wifi.connect()
         wifi.wait()
+    
+    def handle_gps_event(self, event):
+        self._position = event.position
+
 
 __app_export__ = IssCountdownApp
